@@ -61,3 +61,6 @@ end
         @inbounds return SymmetricTensor{2, dim}($exps)
     end
 end
+
+# Faster for symmetric tensors, same for regular tensors
+Base.iszero(A::AbstractTensor) = all(iszero,Tensors.get_data(A))
