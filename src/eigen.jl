@@ -240,3 +240,27 @@ function LinearAlgebra.eigen(R::SymmetricTensor{2,3,T′}) where T′
     ))
     return Eigen(evals_sorted, Q_sorted)
 end
+
+# Find the three real roots of x^2 + px + q = 0 
+function _quad_root_real(p, q)
+    sq = sqrt(p^2-4*q)
+    sqp = p>=0 ? -p-sq : -p+sq
+    return (sqp)/2, 2*q/(sqp)
+end
+
+function LinearAlgebra.eigvals(T::SymmetricTensor{2,2})
+    # det(T-λI) = (T[1,1]-λ)(T[2,2]-λ) - T[1,2]^2
+    # T[1,1]*T[2,2] + λ^2 - λ(T[1,1]+T[2,2]) - T[1,2]^2
+    # λ^2 - (T[1,1]+T[2,2]) λ + (T[1,1]*T[2,2] - T[1,2]^2) = 0
+    # a=1, b=-(T[1,1]+T[2,2]), c=(T[1,1]*T[2,2] - T[1,2]^2)
+    # p=-(T[1,1]+T[2,2]), q=(T[1,1]*T[2,2] - T[1,2]^2)
+    @inbounds begin
+        data = get_data(T)
+        T11=data[1]
+        T22=data[3]
+        T12=data[2]
+    end
+    return Vec{2}(_sort_tuple(_quad_root_real(-(T11+T22), T11*T22 - T12^2)))
+end
+
+_sort_tuple(v::Tuple{T,T}) where{T} = v[2]>v[1] ? v : (v[2],v[1])
