@@ -1,3 +1,77 @@
+struct Eigen{T, S, dim, M}
+    values::Vec{dim, T}
+    vectors::Tensor{2, dim, S, M}
+end
+
+struct FourthOrderEigen{dim,T,S,M}
+    values::Vector{T}
+    vectors::Vector{SymmetricTensor{2,dim,S,M}}
+end
+
+"""
+    eigvals(::SymmetricTensor)
+
+Compute the eigenvalues of a symmetric tensor.
+"""
+@inline LinearAlgebra.eigvals(S::SymmetricTensor) = eigvals(eigen(S))
+
+"""
+    eigvecs(::SymmetricTensor)
+
+Compute the eigenvectors of a symmetric tensor.
+"""
+@inline LinearAlgebra.eigvecs(S::SymmetricTensor) = eigvecs(eigen(S))
+
+"""
+    eigen(A::SymmetricTensor{2})
+
+Compute the eigenvalues and eigenvectors of a symmetric second order tensor
+and return an `Eigen` object. The eigenvalues are stored in a `Vec`,
+sorted in ascending order. The corresponding eigenvectors are stored
+as the columns of a `Tensor`.
+
+See [`eigvals`](@ref) and [`eigvecs`](@ref).
+
+# Examples
+```jldoctest
+julia> A = rand(SymmetricTensor{2, 2});
+
+julia> E = eigen(A);
+
+julia> E.values
+2-element Vec{2, Float64}:
+ -0.1883547111127678
+  1.345436766284664
+
+julia> E.vectors
+2×2 Tensor{2, 2, Float64, 4}:
+ -0.701412  0.712756
+  0.712756  0.701412
+```
+"""
+LinearAlgebra.eigen(::SymmetricTensor{2})
+
+"""
+    eigvals(::Union{Eigen,FourthOrderEigen})
+
+Extract eigenvalues from an `Eigen` or `FourthOrderEigen` object,
+returned by [`eigen`](@ref).
+"""
+@inline LinearAlgebra.eigvals(E::Union{Eigen,FourthOrderEigen}) = E.values
+
+"""
+    eigvecs(::Union{Eigen,FourthOrderEigen})
+
+Extract eigenvectors from an `Eigen` or `FourthOrderEigen` object,
+returned by [`eigen`](@ref).
+"""
+@inline LinearAlgebra.eigvecs(E::Union{Eigen,FourthOrderEigen}) = E.vectors
+
+# destructure via iteration
+function Base.iterate(E::Union{Eigen,FourthOrderEigen}, state::Int=1)
+    return iterate((eigvals(E), eigvecs(E)), state)
+end
+
 # MIT License: Copyright (c) 2016: Andy Ferris.
 # See LICENSE.md for further licensing test
 
@@ -241,6 +315,24 @@ function LinearAlgebra.eigen(R::SymmetricTensor{2,3,T′}) where T′
     return Eigen(evals_sorted, Q_sorted)
 end
 
+"""
+    eigen(A::SymmetricTensor{4})
+
+Compute the eigenvalues and second order eigentensors of a symmetric fourth
+order tensor and return an `FourthOrderEigen` object. The eigenvalues and
+eigentensors are sorted in ascending order of the eigenvalues.
+
+See also [`eigvals`](@ref) and [`eigvecs`](@ref).
+"""
+function LinearAlgebra.eigen(R::SymmetricTensor{4,dim,T′}) where {dim,T′}
+    S = ustrip(R)
+    T = eltype(S)
+    E = eigen(Hermitian(tomandel(S)))
+    values = E.values isa Vector{T′} ? E.values : T′[T′(v) for v in E.values]
+    vectors = [frommandel(SymmetricTensor{2,dim,T}, view(E.vectors, :, i)) for i in 1:size(E.vectors, 2)]
+    return FourthOrderEigen(values, vectors)
+end
+
 # Find the three real roots of x^2 + px + q = 0 
 function _quad_root_real(p, q)
     sq = sqrt(p^2-4*q)
@@ -248,19 +340,21 @@ function _quad_root_real(p, q)
     return (sqp)/2, 2*q/(sqp)
 end
 
-function LinearAlgebra.eigvals(T::SymmetricTensor{2,2})
-    # det(T-λI) = (T[1,1]-λ)(T[2,2]-λ) - T[1,2]^2
-    # T[1,1]*T[2,2] + λ^2 - λ(T[1,1]+T[2,2]) - T[1,2]^2
-    # λ^2 - (T[1,1]+T[2,2]) λ + (T[1,1]*T[2,2] - T[1,2]^2) = 0
-    # a=1, b=-(T[1,1]+T[2,2]), c=(T[1,1]*T[2,2] - T[1,2]^2)
-    # p=-(T[1,1]+T[2,2]), q=(T[1,1]*T[2,2] - T[1,2]^2)
+function LinearAlgebra.eigvals(R::SymmetricTensor{2,2,T′}) where{T′}
+    S = ustrip(R)
+    # det(S-λI) = (S[1,1]-λ)(S[2,2]-λ) - S[1,2]^2
+    # S[1,1]*S[2,2] + λ^2 - λ(S[1,1]+S[2,2]) - S[1,2]^2
+    # λ^2 - (S[1,1]+S[2,2]) λ + (S[1,1]*S[2,2] - S[1,2]^2) = 0
+    # a=1, b=-(S[1,1]+S[2,2]), c=(S[1,1]*S[2,2] - S[1,2]^2)
+    # p=-(S[1,1]+S[2,2]), q=(S[1,1]*S[2,2] - S[1,2]^2)
     @inbounds begin
-        data = get_data(T)
-        T11=data[1]
-        T22=data[3]
-        T12=data[2]
+        data = get_data(S)
+        S11=data[1]
+        S22=data[3]
+        S12=data[2]
     end
-    return Vec{2}(_sort_tuple(_quad_root_real(-(T11+T22), T11*T22 - T12^2)))
+    λ = Vec{2}(_sort_tuple(_quad_root_real(-(S11+S22), S11*S22 - S12^2)))
+    return convert(Vec{2,T′}, λ)
 end
 
 _sort_tuple(v::Tuple{T,T}) where{T} = v[2]>v[1] ? v : (v[2],v[1])
