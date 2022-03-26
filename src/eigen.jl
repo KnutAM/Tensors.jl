@@ -333,14 +333,10 @@ function LinearAlgebra.eigen(R::SymmetricTensor{4,dim,T′}) where {dim,T′}
     return FourthOrderEigen(values, vectors)
 end
 
-# Find the three real roots of x^2 + px + q = 0 
-function _quad_root_real(p, q)
-    sq = sqrt(p^2-4*q)
-    sqp = p>=0 ? -p-sq : -p+sq
-    return (sqp)/2, 2*q/(sqp)
-end
+LinearAlgebra.eigvals(R::SymmetricTensor{2,2,T′}) where{T′} = iszero(R) ? zero(Vec{2,T′}) : eigvals_unsafe(R)
 
-function LinearAlgebra.eigvals(R::SymmetricTensor{2,2,T′}) where{T′}
+#2x faster, but for a zero tensor gives one λ=NaN
+function eigvals_unsafe(R::SymmetricTensor{2,2,T′}) where{T′}
     S = ustrip(R)
     # det(S-λI) = (S[1,1]-λ)(S[2,2]-λ) - S[1,2]^2
     # S[1,1]*S[2,2] + λ^2 - λ(S[1,1]+S[2,2]) - S[1,2]^2
@@ -353,8 +349,49 @@ function LinearAlgebra.eigvals(R::SymmetricTensor{2,2,T′}) where{T′}
         S22=data[3]
         S12=data[2]
     end
-    λ = Vec{2}(_sort_tuple(_quad_root_real(-(S11+S22), S11*S22 - S12^2)))
+    p, q = (-(S11+S22), S11*S22 - S12^2)
+    λ = Vec{2}(_sort_tuple(_quad_root_real(p, q)))
     return convert(Vec{2,T′}, λ)
 end
 
+function LinearAlgebra.eigvals(R::SymmetricTensor{2,3,T′}) where{T′}
+    # Algorithm: https://en.wikipedia.org/wiki/Eigenvalue_algorithm [Accessed 2022-03-26]
+    S = ustrip(R)
+    T = eltype(S)
+    q = tr(S)/3
+    Bp = (S - q*one(S))
+    p = norm(Bp)/sqrt(6)
+    if p==0 # Diagonal tensor
+        data = get_data(S)
+        λ_tuple = (data[1], data[4], data[6])
+    else
+        r = det(Bp)/(2*p^3)
+        if r < -1
+            ϕ = T(π/3)
+        elseif r > 1
+            ϕ = zero(T)
+        else
+            ϕ = acos(r)/3
+        end
+        λ1 = q + 2*p*cos(ϕ) 
+        λ2 = q + 2*p*cos(ϕ+2*pi/3)
+        λ3 = 3*q - λ1 - λ2
+        λ_tuple = (λ1, λ2, λ3)
+    end
+    λ = Vec{3}(_sort_tuple(λ_tuple))
+    return convert(Vec{3,T′}, λ)
+end
+
 _sort_tuple(v::Tuple{T,T}) where{T} = v[2]>v[1] ? v : (v[2],v[1])
+function _sort_tuple(v::Tuple{T,T,T}) where{T}
+    v = v[3] > v[2] ? v : (v[1], v[3], v[2])    # after this v[3]>v[2]
+    v = v[2] > v[1] ? v : (v[3] > v[1] ? (v[2], v[1], v[3]) : (v[2], v[3], v[1]))
+end
+
+# Find the three real roots of x^2 + px + q = 0 in a numerically stable way
+# Gives NaN for p==q==0, this should be checked upstream (2x performance cost)
+function _quad_root_real(p::T, q::T) where{T}
+    sq = sqrt(p^2-4*q)
+    sqp = p>=0 ? -p-sq : -p+sq
+    return (sqp)/2, 2*q/(sqp)
+end
