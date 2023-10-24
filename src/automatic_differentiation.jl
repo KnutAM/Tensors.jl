@@ -621,3 +621,17 @@ function Broadcast.broadcasted(::typeof(laplace), f::F, v::V) where {F, V <: Vec
     end
     return Vec{3}((v1, v2, v3))
 end
+
+# Spatial derivatives, gradient*, divergence, curl.
+# Allows only derivatives wrt. `x::Vec`
+# Not to be confused with the function Tensors.gradient, 
+# which is just the general tensor derivative.
+struct SpatialDiffOp{F<:Function,OP<:Function}
+    op::OP
+    f::F
+end
+(sdo::SpatialDiffOp)(x::Vec) = sdo.op(sdo.f, x)
+
+LinearAlgebra.dot(f::Function, ::typeof(∇)) = SpatialDiffOp(divergence, f)  # d_{⋯} = ∂f(x)_{⋯i}/∂xᵢ
+LinearAlgebra.cross(f::Function, ::typeof(∇)) = SpatialDiffOp(curl, f)      # d_{⋯j} εₒₚⱼ ∂f(x)_{⋯p}/∂xₒ
+otimes(f::Function, ::typeof(∇)) = SpatialDiffOp(gradient, f)               # d_{⋯jk} = ∂f(x)_{⋯j}/∂xₖ
